@@ -1,0 +1,29 @@
+{
+  "name": "tennis-seat-reservation",
+  "version": "1.0.0",
+  "description": "A web application for reserving seats for tennis matches.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "keywords": [
+    "tennis",
+    "reservation",
+    "seats",
+    "booking"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "@types/react": "latest",
+    "@types/node": "latest"
+  }
+}
