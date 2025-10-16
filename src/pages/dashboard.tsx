@@ -7,8 +7,10 @@ import ImageEditor from '../components/ImageEditor';
 interface Project {
   id: string;
   input_image_url: string;
-  output_image_url: string;
+  output_image_url: string | null;
   prompt: string;
+  status: string;
+  payment_status: string;
   created_at: string;
 }
 
@@ -18,6 +20,18 @@ const DashboardPage: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // Check for successful payment
+  useEffect(() => {
+    const sessionId = router.query.session_id as string;
+    if (sessionId) {
+      // Payment successful, refresh projects
+      fetchProjects();
+      // Remove session_id from URL
+      router.replace('/dashboard', undefined, { shallow: true });
+    }
+  }, [router.query.session_id]);
 
   // Protect the page
   useEffect(() => {
@@ -98,6 +112,78 @@ const DashboardPage: React.FC = () => {
     }
   };
 
+  // Handle payment for a project
+  const handlePayment = async (projectId: string) => {
+    try {
+      const { data: { session } } = await (await import('../lib/supabase')).supabase.auth.getSession();
+      
+      if (!session) {
+        alert('You must be logged in');
+        return;
+      }
+
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ projectId }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        alert(`Error: ${data.error || 'Failed to create checkout session'}`);
+        return;
+      }
+
+      const { url } = await response.json();
+      // Redirect to Stripe Checkout
+      window.location.href = url;
+    } catch (error) {
+      console.error('Error creating checkout session:', error);
+      alert('Failed to create checkout session');
+    }
+  };
+
+  // Trigger generation after payment
+  const handleGenerate = async (projectId: string) => {
+    setProcessingId(projectId);
+
+    try {
+      const { data: { session } } = await (await import('../lib/supabase')).supabase.auth.getSession();
+      
+      if (!session) {
+        alert('You must be logged in');
+        return;
+      }
+
+      const response = await fetch('/api/process-generation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ projectId }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        alert(`Error: ${data.error || 'Failed to generate image'}`);
+        setProcessingId(null);
+        return;
+      }
+
+      // Refresh projects to show generated image
+      await fetchProjects();
+      setProcessingId(null);
+    } catch (error) {
+      console.error('Error generating image:', error);
+      alert('Failed to generate image');
+      setProcessingId(null);
+    }
+  };
+
   // Show loading while checking auth
   if (authLoading) {
     return (
@@ -175,11 +261,17 @@ const DashboardPage: React.FC = () => {
                       </div>
                       <div>
                         <p className="text-xs font-semibold text-gray-500 mb-1">Generated</p>
-                        <img
-                          src={project.output_image_url}
-                          alt="Generated"
-                          className="w-full h-32 object-cover rounded-lg"
-                        />
+                        {project.output_image_url ? (
+                          <img
+                            src={project.output_image_url}
+                            alt="Generated"
+                            className="w-full h-32 object-cover rounded-lg"
+                          />
+                        ) : (
+                          <div className="w-full h-32 bg-gray-100 rounded-lg flex items-center justify-center">
+                            <span className="text-xs text-gray-400">En attente</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -189,6 +281,25 @@ const DashboardPage: React.FC = () => {
                       <p className="text-sm text-gray-700 line-clamp-2">{project.prompt}</p>
                     </div>
 
+                    {/* Status Badge */}
+                    <div className="mb-3">
+                      {project.payment_status === 'pending' && (
+                        <span className="inline-block px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full">
+                          ⏳ Paiement requis
+                        </span>
+                      )}
+                      {project.payment_status === 'paid' && !project.output_image_url && (
+                        <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
+                          {processingId === project.id ? '🔄 Génération...' : '✓ Payé - Prêt'}
+                        </span>
+                      )}
+                      {project.output_image_url && (
+                        <span className="inline-block px-3 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
+                          ✓ Complété
+                        </span>
+                      )}
+                    </div>
+
                     {/* Date */}
                     <p className="text-xs text-gray-400 mb-3">
                       {new Date(project.created_at).toLocaleDateString()}
@@ -196,13 +307,32 @@ const DashboardPage: React.FC = () => {
 
                     {/* Actions */}
                     <div className="flex gap-2">
-                      <a
-                        href={project.output_image_url}
-                        download
-                        className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-lg text-sm font-semibold hover:shadow-lg transition-all text-center"
-                      >
-                        Download
-                      </a>
+                      {project.payment_status === 'pending' && (
+                        <button
+                          onClick={() => handlePayment(project.id)}
+                          className="flex-1 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg text-sm font-semibold hover:shadow-lg transition-all"
+                        >
+                          Payer 2€
+                        </button>
+                      )}
+                      {project.payment_status === 'paid' && !project.output_image_url && (
+                        <button
+                          onClick={() => handleGenerate(project.id)}
+                          disabled={processingId === project.id}
+                          className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-lg text-sm font-semibold hover:shadow-lg transition-all disabled:opacity-50"
+                        >
+                          {processingId === project.id ? 'Génération...' : 'Générer'}
+                        </button>
+                      )}
+                      {project.output_image_url && (
+                        <a
+                          href={project.output_image_url}
+                          download
+                          className="flex-1 px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-lg text-sm font-semibold hover:shadow-lg transition-all text-center"
+                        >
+                          Download
+                        </a>
+                      )}
                       <button
                         onClick={() => handleDelete(project.id)}
                         disabled={deletingId === project.id}

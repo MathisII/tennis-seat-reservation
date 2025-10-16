@@ -81,7 +81,7 @@ const ImageEditor: React.FC<ImageEditorProps> = () => {
             formData.append('image', selectedFile);
             formData.append('prompt', prompt);
 
-            const response = await fetch('/api/generate', {
+            const response = await fetch('/api/create-project', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${session.access_token}`,
@@ -92,11 +92,29 @@ const ImageEditor: React.FC<ImageEditorProps> = () => {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.message || data.error || 'Failed to generate image');
+                throw new Error(data.message || data.error || 'Failed to create project');
             }
 
-            setGeneratedImage(data.outputUrl);
-            setSuccess('Image generated successfully!');
+            setSuccess('Projet créé! Redirection vers le paiement...');
+            
+            // Redirect to checkout
+            const checkoutResponse = await fetch('/api/create-checkout-session', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ projectId: data.projectId }),
+            });
+
+            const checkoutData = await checkoutResponse.json();
+
+            if (!checkoutResponse.ok) {
+                throw new Error(checkoutData.error || 'Failed to create checkout session');
+            }
+
+            // Redirect to Stripe Checkout
+            window.location.href = checkoutData.url;
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : 'An error occurred';
             setError(errorMsg);
